@@ -25,6 +25,7 @@ export default function ExplorePage() {
   
   const iss = useISS(userPosition);
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
+  const [permissionStep, setPermissionStep] = useState<"camera" | "orientation" | "location" | "ready">("camera");
 
   // 画面サイズ取得
   useEffect(() => {
@@ -43,55 +44,60 @@ export default function ExplorePage() {
     }
   }, [stream]);
 
-  // センサーとカメラ、位置情報の同時許可
-  const handleStart = async () => {
-    // 位置情報の取得（マウント時にも動いているが念のため再試行）
-    await requestPosition();
-    // センサー許可
-    const sensorOk = await requestOrientationPermission();
-    if (sensorOk) {
-      // カメラ起動
-      await startCamera();
-    }
+  // ステップ1: カメラ
+  const handleCamera = async () => {
+    const ok = await startCamera();
+    if (ok) setPermissionStep("orientation");
   };
 
-  // スマホが向いているRA/Decを計算
-  const centerCoords = useMemo(() => {
-    if (!userPosition) return { ra: 0, dec: 0 };
-    
-    const { azimuth, altitude } = deviceOrientationToAzAlt(alpha, beta, gamma, isIOS);
-    return azAltToRaDec(azimuth, altitude, userPosition.latitude, userPosition.longitude, new Date());
-  }, [alpha, beta, gamma, isIOS, userPosition]);
+  // ステップ2: センサー (iOS要件: タップから直接呼ぶ)
+  const handleOrientation = async () => {
+    const ok = await requestOrientationPermission();
+    if (ok) setPermissionStep("location");
+  };
 
-  // ISSの画面上の座標を計算
-  const issProjected = useMemo(() => {
-    if (!iss.ra || !iss.dec || !windowSize.width) return null;
+  // ステップ3: 位置情報
+  const handleLocation = async () => {
+    await requestPosition();
+    setPermissionStep("ready");
+  };
 
-    const projected = gnomonicProject(iss.ra, iss.dec, centerCoords.ra, centerCoords.dec);
-    if (!projected.visible) return { ...projected, sx: 0, sy: 0 };
+  // すべて許可済みならreadyにする
+  useEffect(() => {
+    if (cameraActive && orientationPermission && userPosition && permissionStep !== "ready") {
+      setPermissionStep("ready");
+    }
+  }, [cameraActive, orientationPermission, userPosition, permissionStep]);
 
-    const { sx, sy } = normalizedToScreen(projected.x, projected.y, windowSize.width, windowSize.height, 60);
-    return { ...projected, sx, sy };
-  }, [iss, centerCoords, windowSize]);
-
-  // 距離表示のフォーマット
-  const formattedDistance = useMemo(() => {
-    if (iss.distanceM == null) return null;
-    return formatDistance(iss.distanceM);
-  }, [iss.distanceM]);
-
-  if (!orientationPermission) {
+  if (permissionStep !== "ready") {
     return (
       <div style={styles.container}>
         <div style={styles.modal}>
-          <h1 style={styles.title}>観測準備</h1>
+          <h1 style={styles.title}>観測準備 ({
+            permissionStep === "camera" ? "1/3" : 
+            permissionStep === "orientation" ? "2/3" : "3/3"
+          })</h1>
+          
           <p style={styles.text}>
-            AR体験のためにデバイスのセンサー（方位・傾き）とカメラへのアクセス許可が必要です。
+            {permissionStep === "camera" && "まず、背景に映し出すカメラを許可してください。"}
+            {permissionStep === "orientation" && "次に、スマホの向きを検知するセンサーを許可してください。"}
+            {permissionStep === "location" && "最後に、現在地のISSを計算するため位置情報を許可してください。"}
           </p>
-          <button style={styles.button} onClick={handleStart}>
-            センサーを許可する
-          </button>
+
+          {permissionStep === "camera" && (
+            <button style={styles.button} onClick={handleCamera}>カメラを許可</button>
+          )}
+          {permissionStep === "orientation" && (
+            <button style={styles.button} onClick={handleOrientation}>センサーを許可</button>
+          )}
+          {permissionStep === "location" && (
+            <button style={styles.button} onClick={handleLocation}>位置情報を許可</button>
+          )}
+
           <Link href="/" style={styles.link}>戻る</Link>
+          
+          {cameraError && <p style={{color: "#ff4444", fontSize: "0.8rem", marginTop: "1rem"}}>{cameraError}</p>}
+          {geoError && <p style={{color: "#ff4444", fontSize: "0.8rem", marginTop: "1rem"}}>{geoError}</p>}
         </div>
       </div>
     );
