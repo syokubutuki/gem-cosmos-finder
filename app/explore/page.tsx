@@ -130,7 +130,16 @@ export default function ExplorePage() {
       {/* デバッグ・ステータス表示 */}
       <div style={styles.statusPanel}>
         <div style={styles.statusItem}>
-          <span style={styles.label}>方向:</span> {Math.floor(alpha)}°
+          <span style={styles.label}>方向 (alpha):</span> {Math.floor(alpha)}° / <span style={styles.label}>傾き (beta):</span> {Math.floor(beta)}°
+        </div>
+        <div style={styles.statusItem}>
+          <span style={styles.label}>現在地:</span> {userPosition ? `${userPosition.latitude.toFixed(2)}, ${userPosition.longitude.toFixed(2)}` : "取得中..."}
+        </div>
+        <div style={styles.statusItem}>
+          <span style={styles.label}>ISS位置:</span> {iss.ra ? `RA:${iss.ra.toFixed(1)} Dec:${iss.dec?.toFixed(1)}` : "計算中..."}
+        </div>
+        <div style={styles.statusItem}>
+          <span style={styles.label}>投影状態:</span> {issProjected ? `visible:${issProjected.visible} x:${issProjected.sx?.toFixed(0)} y:${issProjected.sy?.toFixed(0)}` : "N/A"}
         </div>
         <div style={styles.statusItem}>
           <span style={styles.label}>ISS 可視:</span> {iss.visible ? "地平線上" : "地平線下"}
