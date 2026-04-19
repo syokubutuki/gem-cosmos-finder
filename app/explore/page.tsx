@@ -137,7 +137,7 @@ export default function ExplorePage() {
           <span style={styles.label}>方向 (alpha):</span> {Math.floor(alpha)}° / <span style={styles.label}>傾き (beta):</span> {Math.floor(beta)}°
         </div>
         <div style={styles.statusItem}>
-          <span style={styles.label}>現在地:</span> {userPosition ? `${userPosition.latitude.toFixed(2)}, ${userPosition.longitude.toFixed(2)}` : "取得中..."}
+          <span style={styles.label}>現在地:</span> {userPosition ? `${userPosition.latitude.toFixed(2)}, ${userPosition.longitude.toFixed(2)}` : (geoError ? <span style={{color: "#ff4444"}}>{geoError}</span> : "取得中...")}
         </div>
         <div style={styles.statusItem}>
           <span style={styles.label}>ISS位置:</span> {iss.ra ? `RA:${iss.ra.toFixed(1)} Dec:${iss.dec?.toFixed(1)}` : "計算中..."}

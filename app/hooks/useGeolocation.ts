@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { GeoPosition } from "../lib/types";
 
 interface GeoState {
@@ -16,36 +16,53 @@ export function useGeolocation() {
     loading: false,
   });
 
-  const requestPosition = useCallback(async (): Promise<GeoPosition | null> => {
+  const watchId = useRef<number | null>(null);
+
+  const startWatching = useCallback(() => {
     if (typeof window === "undefined" || !navigator.geolocation) {
       setState({ position: null, error: "位置情報がサポートされていません", loading: false });
-      return null;
+      return;
     }
 
     setState((s) => ({ ...s, loading: true }));
 
-    return new Promise((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const position: GeoPosition = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          };
-          setState({ position, error: null, loading: false });
-          resolve(position);
-        },
-        (err) => {
-          setState({ position: null, error: err.message, loading: false });
-          resolve(null);
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      );
-    });
+    // 既存の監視があれば停止
+    if (watchId.current !== null) {
+      navigator.geolocation.clearWatch(watchId.current);
+    }
+
+    watchId.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const position: GeoPosition = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        };
+        setState({ position, error: null, loading: false });
+      },
+      (err) => {
+        let msg = "位置情報の取得に失敗しました";
+        if (err.code === 1) msg = "位置情報の使用が許可されていません。設定から許可してください。";
+        if (err.code === 2) msg = "位置信号を特定できません（屋内や地下など）";
+        if (err.code === 3) msg = "位置情報の取得中にタイムアウトしました";
+        
+        setState((s) => ({ ...s, error: msg, loading: false }));
+      },
+      { 
+        enableHighAccuracy: true, 
+        timeout: 20000, // 20秒に延長
+        maximumAge: 0 
+      }
+    );
   }, []);
 
   useEffect(() => {
-    requestPosition();
-  }, [requestPosition]);
+    startWatching();
+    return () => {
+      if (watchId.current !== null) {
+        navigator.geolocation.clearWatch(watchId.current);
+      }
+    };
+  }, [startWatching]);
 
-  return { ...state, requestPosition };
+  return { ...state, requestPosition: startWatching };
 }
