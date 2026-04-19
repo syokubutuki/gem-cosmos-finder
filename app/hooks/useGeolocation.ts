@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { GeoPosition } from "../lib/types";
 
 interface GeoState {
@@ -17,7 +17,7 @@ export function useGeolocation() {
   });
 
   const requestPosition = useCallback(async (): Promise<GeoPosition | null> => {
-    if (!navigator.geolocation) {
+    if (typeof window === "undefined" || !navigator.geolocation) {
       setState({ position: null, error: "位置情報がサポートされていません", loading: false });
       return null;
     }
@@ -38,10 +38,14 @@ export function useGeolocation() {
           setState({ position: null, error: err.message, loading: false });
           resolve(null);
         },
-        { enableHighAccuracy: false, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     });
   }, []);
+
+  useEffect(() => {
+    requestPosition();
+  }, [requestPosition]);
 
   return { ...state, requestPosition };
 }

@@ -13,7 +13,7 @@ import { formatDistance } from "../lib/distance-format";
 export default function ExplorePage() {
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const { stream, available: cameraActive, error: cameraError, startCamera } = useCamera();
-  const { position: userPosition, error: geoError } = useGeolocation();
+  const { position: userPosition, error: geoError, requestPosition } = useGeolocation();
   const {
     alpha,
     beta,
@@ -43,10 +43,14 @@ export default function ExplorePage() {
     }
   }, [stream]);
 
-  // センサーとカメラの同時許可
+  // センサーとカメラ、位置情報の同時許可
   const handleStart = async () => {
+    // 位置情報の取得（マウント時にも動いているが念のため再試行）
+    await requestPosition();
+    // センサー許可
     const sensorOk = await requestOrientationPermission();
     if (sensorOk) {
+      // カメラ起動
       await startCamera();
     }
   };
