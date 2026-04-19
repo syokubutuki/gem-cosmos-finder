@@ -13,7 +13,7 @@ import { formatDistance } from "../lib/distance-format";
 export default function ExplorePage() {
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const { stream, available: cameraActive, error: cameraError, startCamera } = useCamera();
-  const { position: userPosition, error: geoError, requestPosition } = useGeolocation();
+  const { position: userPosition, error: geoError, requestPosition, log: geoLog } = useGeolocation();
   const {
     alpha,
     beta,
@@ -144,6 +144,7 @@ export default function ExplorePage() {
         </div>
         <div style={styles.statusItem}>
           <span style={styles.label}>現在地:</span> {userPosition ? `${userPosition.latitude.toFixed(2)}, ${userPosition.longitude.toFixed(2)}` : (geoError ? <span style={{color: "#ff4444"}}>{geoError}</span> : "取得中...")}
+          <div style={{fontSize: "0.7rem", color: "#666"}}>{geoLog}</div>
         </div>
         <div style={styles.statusItem}>
           <span style={styles.label}>ISS位置:</span> {iss.ra ? `RA:${iss.ra.toFixed(1)} Dec:${iss.dec?.toFixed(1)}` : "計算中..."}

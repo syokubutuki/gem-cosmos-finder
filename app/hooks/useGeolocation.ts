@@ -7,6 +7,7 @@ interface GeoState {
   position: GeoPosition | null;
   error: string | null;
   loading: boolean;
+  log: string; // デバッグ用ログ
 }
 
 export function useGeolocation() {
@@ -14,55 +15,79 @@ export function useGeolocation() {
     position: null,
     error: null,
     loading: false,
+    log: "待機中",
   });
 
   const watchId = useRef<number | null>(null);
 
   const startWatching = useCallback(() => {
     if (typeof window === "undefined" || !navigator.geolocation) {
-      setState({ position: null, error: "位置情報がサポートされていません", loading: false });
+      setState(s => ({ ...s, error: "位置情報非対応", log: "Error: No Geolocation API" }));
       return;
     }
 
-    setState((s) => ({ ...s, loading: true }));
+    setState(s => ({ ...s, loading: true, log: "GPS起動試行中..." }));
 
-    // 既存の監視があれば停止
+    const onSuccess = (pos: GeolocationPosition) => {
+      const position: GeoPosition = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      };
+      setState(s => ({ 
+        ...s, 
+        position, 
+        error: null, 
+        loading: false, 
+        log: `取得成功 (${pos.coords.accuracy.toFixed(0)}m)` 
+      }));
+    };
+
+    const onError = (err: GeolocationPositionError) => {
+      let msg = "取得失敗";
+      if (err.code === 1) msg = "許可が必要です";
+      if (err.code === 2) msg = "信号なし";
+      if (err.code === 3) msg = "タイムアウト";
+      
+      setState(s => ({ 
+        ...s, 
+        error: msg, 
+        loading: false, 
+        log: `Error(${err.code}): ${err.message}` 
+      }));
+
+      // 高精度で失敗した場合は低精度で一度試す
+      if (err.code === 3) {
+        setState(s => ({ ...s, log: "低精度モードで再試行中..." }));
+        navigator.geolocation.getCurrentPosition(onSuccess, undefined, { enableHighAccuracy: false, timeout: 5000 });
+      }
+    };
+
     if (watchId.current !== null) {
       navigator.geolocation.clearWatch(watchId.current);
     }
 
-    watchId.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const position: GeoPosition = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        };
-        setState({ position, error: null, loading: false });
-      },
-      (err) => {
-        let msg = "位置情報の取得に失敗しました";
-        if (err.code === 1) msg = "位置情報の使用が許可されていません。設定から許可してください。";
-        if (err.code === 2) msg = "位置信号を特定できません（屋内や地下など）";
-        if (err.code === 3) msg = "位置情報の取得中にタイムアウトしました";
-        
-        setState((s) => ({ ...s, error: msg, loading: false }));
-      },
-      { 
-        enableHighAccuracy: true, 
-        timeout: 20000, // 20秒に延長
-        maximumAge: 0 
-      }
-    );
+    // 最初に一度 getCurrentPosition を呼んで許可ダイアログを確実に促す
+    navigator.geolocation.getCurrentPosition(onSuccess, onError, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    });
+
+    // その後継続的に監視
+    watchId.current = navigator.geolocation.watchPosition(onSuccess, onError, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0
+    });
   }, []);
 
   useEffect(() => {
-    startWatching();
     return () => {
       if (watchId.current !== null) {
         navigator.geolocation.clearWatch(watchId.current);
       }
     };
-  }, [startWatching]);
+  }, []);
 
   return { ...state, requestPosition: startWatching };
 }
