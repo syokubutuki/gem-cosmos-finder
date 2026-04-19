@@ -11,7 +11,8 @@ import { deviceOrientationToAzAlt, azAltToRaDec } from "../lib/coordinates";
 import { formatDistance } from "../lib/distance-format";
 
 export default function ExplorePage() {
-  const { videoRef, active: cameraActive, error: cameraError } = useCamera();
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const { stream, available: cameraActive, error: cameraError, startCamera } = useCamera();
   const { position: userPosition, error: geoError } = useGeolocation();
   const {
     alpha,
@@ -19,7 +20,7 @@ export default function ExplorePage() {
     gamma,
     isIOS,
     permissionGranted: orientationPermission,
-    requestPermission,
+    requestPermission: requestOrientationPermission,
   } = useDeviceOrientation();
   
   const iss = useISS(userPosition);
@@ -34,6 +35,21 @@ export default function ExplorePage() {
     window.addEventListener("resize", updateSize);
     return () => window.removeEventListener("resize", updateSize);
   }, []);
+
+  // カメラストリームのセット
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  // センサーとカメラの同時許可
+  const handleStart = async () => {
+    const sensorOk = await requestOrientationPermission();
+    if (sensorOk) {
+      await startCamera();
+    }
+  };
 
   // スマホが向いているRA/Decを計算
   const centerCoords = useMemo(() => {
@@ -68,7 +84,7 @@ export default function ExplorePage() {
           <p style={styles.text}>
             AR体験のためにデバイスのセンサー（方位・傾き）とカメラへのアクセス許可が必要です。
           </p>
-          <button style={styles.button} onClick={requestPermission}>
+          <button style={styles.button} onClick={handleStart}>
             センサーを許可する
           </button>
           <Link href="/" style={styles.link}>戻る</Link>

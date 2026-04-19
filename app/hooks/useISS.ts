@@ -22,7 +22,7 @@ export function useISS(userPosition: GeoPosition | null) {
     visible: false,
   });
 
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
+  const timerRef = useRef<any>(null);
 
   const update = useCallback(async () => {
     if (!userPosition) return;
@@ -70,8 +70,9 @@ export function useISS(userPosition: GeoPosition | null) {
 
   useEffect(() => {
     update();
-    timerRef.current = setInterval(update, POLL_INTERVAL);
-    return () => clearInterval(timerRef.current);
+    const timer = setInterval(update, POLL_INTERVAL);
+    timerRef.current = timer;
+    return () => clearInterval(timer);
   }, [update]);
 
   return state;
