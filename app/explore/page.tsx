@@ -6,9 +6,12 @@ import { useCamera } from "../hooks/useCamera";
 import { useDeviceOrientation } from "../hooks/useDeviceOrientation";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { useISS } from "../hooks/useISS";
+import { useCelestialSearch } from "../hooks/useCelestialSearch";
 import { gnomonicProject, normalizedToScreen } from "../lib/projection";
 import { deviceOrientationToAzAlt, azAltToRaDec } from "../lib/coordinates";
 import { formatDistance } from "../lib/distance-format";
+import { DistanceLayer } from "../lib/types";
+import { LAYER_COLORS } from "../lib/celestial-objects";
 
 export default function ExplorePage() {
   const videoRef = React.useRef<HTMLVideoElement>(null);
@@ -36,6 +39,33 @@ export default function ExplorePage() {
     window.addEventListener("resize", updateSize);
     return () => window.removeEventListener("resize", updateSize);
   }, []);
+
+  // スマホが向いているRA/Decを計算
+  const centerCoords = useMemo(() => {
+    if (!userPosition) return { ra: 0, dec: 0 };
+    const { azimuth, altitude } = deviceOrientationToAzAlt(alpha, beta, gamma, isIOS);
+    return azAltToRaDec(azimuth, altitude, userPosition.latitude, userPosition.longitude, new Date());
+  }, [alpha, beta, gamma, isIOS, userPosition]);
+
+  // 動的な位置情報（ISSなど）
+  const dynamicPositions = useMemo(() => {
+    const map = new Map();
+    if (iss.ra != null && iss.dec != null) {
+      map.set("iss", { ra: iss.ra, dec: iss.dec, distanceM: iss.distanceM });
+    }
+    return map;
+  }, [iss]);
+
+  // 天体検索
+  const activeLayers = useMemo(() => new Set<DistanceLayer>(["earth-orbit", "solar-system", "galaxy", "deep-universe"]), []);
+  const visibleObjects = useCelestialSearch({
+    centerRA: centerCoords.ra,
+    centerDec: centerCoords.dec,
+    canvasWidth: windowSize.width,
+    canvasHeight: windowSize.height,
+    activeLayers,
+    dynamicPositions
+  });
 
   // カメラストリームのセット
   useEffect(() => {
@@ -116,25 +146,35 @@ export default function ExplorePage() {
 
       {/* ARオーバーレイ (SVG) */}
       <svg style={styles.overlay} viewBox={`0 0 ${windowSize.width} ${windowSize.height}`}>
-        {issProjected?.visible && (
-          <g transform={`translate(${issProjected.sx}, ${issProjected.sy})`}>
-            {/* ターゲットマーク */}
-            <circle r="40" fill="none" stroke="#67d8ef" strokeWidth="2" strokeDasharray="4 4" className="animate-spin-slow">
-              <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="10s" repeatCount="indefinite" />
-            </circle>
-            <circle r="5" fill="#67d8ef" />
-            
-            {/* 情報ラベル */}
-            <g transform="translate(50, -20)">
-              <rect x="-5" y="-20" width="140" height="60" rx="5" fill="rgba(0,0,0,0.6)" />
-              <text x="5" y="5" fill="#fff" fontSize="16" fontWeight="bold">ISS</text>
-              <text x="5" y="25" fill="#67d8ef" fontSize="12">国際宇宙ステーション</text>
-              <text x="5" y="40" fill="#ae81ff" fontSize="14" fontFamily="monospace">
-                {formattedDistance?.full}
-              </text>
+        {visibleObjects.map(({ object, screenX, screenY }) => {
+          const color = LAYER_COLORS[object.layer] || "#fff";
+          const isISS = object.id === "iss";
+
+          return (
+            <g key={object.id} transform={`translate(${screenX}, ${screenY})`}>
+              {/* ターゲットマーク */}
+              <circle
+                r={isISS ? 40 : 20}
+                fill="none"
+                stroke={color}
+                strokeWidth="1.5"
+                strokeDasharray={isISS ? "4 4" : "2 2"}
+                className={isISS ? "animate-spin-slow" : ""}
+              />
+              <circle r={isISS ? 5 : 3} fill={color} />
+              
+              {/* 情報ラベル */}
+              <g transform={`translate(${isISS ? 50 : 30}, -20)`}>
+                <rect x="-5" y="-18" width="160" height="55" rx="5" fill="rgba(0,0,0,0.6)" />
+                <text x="5" y="0" fill="#fff" fontSize="14" fontWeight="bold">{object.nameEn}</text>
+                <text x="5" y="16" fill={color} fontSize="10">{object.name}</text>
+                <text x="5" y="30" fill="#aaa" fontSize="11" fontFamily="monospace">
+                  {formatDistance(object.distanceM).full}
+                </text>
+              </g>
             </g>
-          </g>
-        )}
+          );
+        })}
       </svg>
 
       {/* デバッグ・ステータス表示 */}
@@ -150,16 +190,8 @@ export default function ExplorePage() {
           <span style={styles.label}>ISS位置:</span> {iss.ra ? `RA:${iss.ra.toFixed(1)} Dec:${iss.dec?.toFixed(1)}` : "計算中..."}
         </div>
         <div style={styles.statusItem}>
-          <span style={styles.label}>投影状態:</span> {issProjected ? `visible:${issProjected.visible} x:${issProjected.sx?.toFixed(0)} y:${issProjected.sy?.toFixed(0)}` : "N/A"}
+          <span style={styles.label}>表示中の天体:</span> {visibleObjects.length}
         </div>
-        <div style={styles.statusItem}>
-          <span style={styles.label}>ISS 可視:</span> {iss.visible ? "地平線上" : "地平線下"}
-        </div>
-        {!issProjected?.visible && (
-          <div style={styles.guide}>
-            ISSを探しています... スマホを空へ向けてください
-          </div>
-        )}
       </div>
 
       <Link href="/" style={styles.backButton}>×</Link>
@@ -167,6 +199,7 @@ export default function ExplorePage() {
       <style jsx global>{`
         .animate-spin-slow {
           transform-origin: center;
+          animation: spin 10s linear infinite;
         }
         @keyframes spin {
           from { transform: rotate(0deg); }
@@ -263,15 +296,6 @@ const styles: Record<string, React.CSSProperties> = {
   label: {
     color: "#67d8ef",
     fontWeight: "bold",
-  },
-  guide: {
-    marginTop: "1rem",
-    padding: "0.5rem 1rem",
-    background: "rgba(0,0,0,0.5)",
-    borderRadius: "1rem",
-    fontSize: "0.9rem",
-    textAlign: "center",
-    border: "1px solid rgba(103, 216, 239, 0.3)",
   },
   backButton: {
     position: "absolute",
